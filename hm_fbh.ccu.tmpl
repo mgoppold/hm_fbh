@@ -1,0 +1,199 @@
+! HM_FBH Version 1 Steuerung Fussbodenheizung
+!
+! Bei Versionswechsel auch sLogPrefix anpassen
+!
+! Script zur Steuerung einer Fussbodenheizung
+! Temperaturen und Zeiten werden im Thermostat definiert
+!
+! genutzte Systemvariablen
+! Heizperiode = bool
+! XX_Temp_Last = real Temp WZ beim letzten Programmlauf z.B. 21.5
+! {WZ,KU,FU,BZ,SZ,GZ,AZ}_Temp_Last
+!
+! XX_Temp_Offset = real Temp Offset beim dem die Heizung vor Erreichen der Solltemperatur ausgeschalten wird (-10 .. 10)
+! {WZ,KU,FU,BZ,SZ,GZ,AZ}_Temp_Offset
+!
+! genutze Objekte
+! CUxD.CUX2801001 ! zum Logging (siehe CUxD Doku Seite 92 ff Kap. 5.8.2 System.Exec)
+! TempRegler Typ HM-TC-IT-WM-W-EU
+! Switch     Typ HM-LC-Sw4-DR
+!
+! Programm: HM_FBH
+!
+! Bedingung: Wenn...
+! WZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! AZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! BZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! FU_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! GZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! KU_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! ODER
+! SZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! UND
+! Heizperiode ist wahr
+! Aktivität: Dann...
+!   [x] Vor dem Ausführen alle laufenden Verzögerungen für diese Aktivitäten beenden (z.B. Retriggern).
+!   dieses Script
+
+integer idebug      = 0;             ! Debug Infos /tmp/devlog.txt - sollte immer auf 0 oder 1 sein, nur bei Problemen auf 2,3
+string  sLogPrefix  = "HM_FBH_1:";
+string  sSetTemp;                    ! String Typ.SERIAL:2.SET_TEMPERATURE
+string  sActTemp;                    ! String Typ.SERIAL:2.ACTUAL_TEMPERATURE"
+string  sSwitchState;                ! String Typ.SERIAL.REF des Switches
+string  sSysVarTempLast;             ! String Systemvariable auf welcher sich die letzte Temperatur gemerkt wird
+string  sSysVarTempOffset;           ! String Systemvariable auf welcher sich die letzte Temperatur gemerkt wird
+object  oregler;                     ! Datenobjekt des Reglers für die Solltemperatur (Kanal 2)
+object  olast;                       ! Datenobjekt für WZ_Temp_Last
+object  ostate;                      ! Datenobjekt für XX_Heizung_UG:WZ
+
+integer itimeout  = 1800;            ! 30min Mindestzeit die geheizt wird
+real    roffset   = -0.75;           ! Temperaturoffset bei der die Heizung ausgeschalten wird wg Trägheit der FBH
+real    rlast     =  0.0;
+real    rakt      = -1.0;            ! aktuelle Temperatur
+real    rsoll     = -1.0;            ! Solltemperatur im Raumthermostat (Regler).
+
+object osrc = dom.GetObject("$src$");
+object olog = dom.GetObject("CUxD.CUX2801001:1.LOGIT");
+
+if ( olog ) {
+  if ((idebug>3) && osrc) {
+     olog.State(sLogPrefix#"Programm HM_FBH ist aktiv");
+  }
+}
+else {
+  idebug = 0;
+}
+
+if (osrc) {
+   ! olog.State(sLogPrefix#"ausloeser Name="#osrc.Name()#" ID="#osrc.ID()#" TypeName="#osrc.TypeName()#" Value="#osrc.Value());
+
+   string stemp   = osrc.Name();
+   string sserial = stemp.StrValueByIndex(":", 0);
+   sSetTemp       = sserial#":2.SET_TEMPERATURE";
+   sActTemp       = sserial#":2.ACTUAL_TEMPERATURE";
+   if ( sserial == "BidCos-RF.MEQ1230005" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230009"# ":1.STATE";  ! XX_Heizung_UG:WZ
+      sSysVarTempLast   = "WZ_Temp_Last";
+      sSysVarTempOffset = "WZ_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"WZ:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230004" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230009"# ":2.STATE";  ! XX_Heizung_UG:KU
+      sSysVarTempLast   = "KU_Temp_Last";
+      sSysVarTempOffset = "KU_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"KU:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230002" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230009"# ":3.STATE";  ! XX_Heizung_UG:FU
+      sSysVarTempLast   = "FU_Temp_Last";
+      sSysVarTempOffset = "FU_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"FU:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230007" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230008"# ":1.STATE";  ! XX_Heizung_OG:BZ
+      sSysVarTempLast   = "BZ_Temp_Last";
+      sSysVarTempOffset = "BZ_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"BZ:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230003" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230008"# ":2.STATE";  ! XX_Heizung_OG:SZ
+      sSysVarTempLast   = "SZ_Temp_Last";
+      sSysVarTempOffset = "SZ_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"SZ:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230006" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230008"# ":3.STATE";  ! XX_Heizung_OG:GZ
+      sSysVarTempLast   = "GZ_Temp_Last";
+      sSysVarTempOffset = "GZ_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"GZ:";
+   }
+   if ( sserial == "BidCos-RF.MEQ1230001" ) {
+      sSwitchState      = "BidCos-RF.MEQ1230008"# ":4.STATE";  ! XX_Heizung_OG:AZ
+      sSysVarTempLast   = "AZ_Temp_Last";
+      sSysVarTempOffset = "AZ_Temp_Offset";
+      sLogPrefix        = sLogPrefix#"AZ:";
+   }
+   ! olog.State(sLogPrefix#" zugeh ActTemp="#sActTemp#" SetTemp="#sSetTemp#" Switch="#sSwitchState#"  SysVar="#sSysVarTempLast);
+
+   if (dom.GetObject('Heizperiode').State()) {
+             ostate       = dom.GetObject( sSwitchState );             ! SwitchObject belegen
+     time    tnow         = system.Date("%Y-%m-%d %H:%M:%S").ToTime(); ! aktuelle Zeit
+     time    ts_timestamp = ostate.Timestamp();
+     time    tsw          = ts_timestamp.ToInteger();
+     integer isdiff       = tnow.ToInteger() - tsw.ToInteger();        ! Sekunden seit letztem Statuswechsel
+
+     if (isdiff < itimeout) {
+        if (idebug>1) {
+           olog.State(sLogPrefix#"Zeit fuer weiteren Statuswechsel noch nicht erreicht ("#isdiff#"<"#itimeout#")");
+        }
+     }
+     else {
+        oregler   = dom.GetObject( sSetTemp );        ! Solltemperatur auslesen
+        rsoll     = oregler.Value();
+        oregler   = dom.GetObject( sActTemp );        ! aktuelle auslesen
+        rakt      = oregler.Value();
+
+        if (rsoll >= 0 && rakt >= 0 ) {                                      ! Wenn sSetTemp/sActTemp ausgelesen werden konnten
+           real    rdiff        = rakt - rlast;
+           string  sstate       = "konstant";
+           object  ooffset      = dom.GetObject( sSysVarTempOffset ); ! SystemVar XX_Temp_Offset auslesen
+                   roffset      = ooffset.Value();
+                   olast        = dom.GetObject( sSysVarTempLast );   ! SystemVar XX_Temp_Last auslesen
+                   rlast        = olast.Value();
+
+           if ( rdiff < 0 ) {
+              sstate = "fallend";
+           }
+           if ( rdiff > 0 ) {
+              sstate = "steigend";
+           }
+
+           if (idebug>0) {
+              olog.State(sLogPrefix#"Soll=" # rsoll # "|Ist=" # rakt # "|Last=" # rlast # "|Status=" # ostate.State() # "|t=" # isdiff # "s|" # sstate);
+           }
+
+           if ( ostate.State() ) { ! Heizung ist gerade an
+              if ( (rakt+roffset >= rsoll) ) {
+                 if (idebug>0) {
+                    olog.State(sLogPrefix#"schalte Heizung aus");
+                 }
+                 ostate.State(false);
+              }
+              else {
+                 if (idebug>0) {
+                    olog.State(sLogPrefix#"Heizung bleit an");
+                 }
+              }
+           }
+           else { ! Heizung ist aus
+              if ( (rakt <= rsoll) && ( rdiff < 0.0 )) {
+                 if (idebug>0) {
+                    olog.State(sLogPrefix#"schalte Heizung an");
+                 }
+                 ostate.State(true);
+              }
+              else {
+                 if (idebug>0) {
+                    if ( rakt > rsoll ) {
+                       olog.State(sLogPrefix#"Heizung bleit aus (weil akt>soll)");
+                    }
+                    else {
+                       olog.State(sLogPrefix#"Heizung bleit aus (weil Temp noch steigt)");
+                    }
+                 }
+              }
+           } ! Heizung an oder aus
+           olast.State(rakt); ! merke die aktuelle Temperatur auf XX_Temp_Last
+        }
+        else { ! Thermostat antwortet nicht
+           dom.GetObject("CUxD.CUX2801001:1.CMD_EXEC").State("logger -t script -p user.debug Raumthermostat " # osrc.Name() # " antwortet nicht!");
+           dom.GetObject("CUxD.CUX2801001:1.CMD_RUNS").State(1);
+        }
+      } ! else isdiff < itimeout
+   } ! Heizperiode
+} ! ausloesendes Objekt ist definiert

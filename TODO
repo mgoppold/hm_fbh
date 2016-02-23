@@ -1,0 +1,8 @@
+itimeout = 1800 als Systemvar
+idebug = 0,1,2,3 als Systemvar 
+
+Zeiten messen die vergeht vom Einschalten bis erreichen der Solltemp.
+kann XX_Temp_Offset irgendwie berechnet werden?
+
+[x] sLogPrefix abhängig von osrc setzten
+[x] roffset pro Raum setzten (als Systemvar WZ_Temp_Offset)

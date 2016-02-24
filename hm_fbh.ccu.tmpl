@@ -1,12 +1,20 @@
-! HM_FBH Version 2 Steuerung Fussbodenheizung
+! HM_FBH Version 3 Steuerung Fussbodenheizung
 !
 ! Bei Versionswechsel auch sLogPrefix anpassen
+!
+! https://github.com/mgoppold/hm_fbh.git
+! bzw.
+! https://github.com/mgoppold/hm_fbh/releases/tag/2
 !
 ! Script zur Steuerung einer Fussbodenheizung
 ! Temperaturen und Zeiten werden im Thermostat definiert
 !
-! genutzte Systemvariablen
+! genutzte Systemvariablen:
+!
 ! Heizperiode = bool
+! HM_FBH_DEBUG = integer 0,1,2,3
+! HM_FBH_TIMEOUT = integer Zeit in Sekunden bevor An-/Ausgeschalten wird
+!
 ! XX_Temp_Last = real Temp WZ beim letzten Programmlauf z.B. 21.5
 ! {WZ,KU,FU,BZ,SZ,GZ,AZ}_Temp_Last
 !
@@ -40,25 +48,28 @@
 !   [x] Vor dem Ausführen alle laufenden Verzögerungen für diese Aktivitäten beenden (z.B. Retriggern).
 !   dieses Script
 
-integer idebug      = 0;             ! Debug Infos /tmp/devlog.txt - sollte immer auf 0 oder 1 sein, nur bei Problemen auf 2,3
-string  sLogPrefix  = "HM_FBH_2:";
+integer idebug      = 0;             ! Debug Infos /tmp/devlog.txt - sollte immer auf 0 oder 1 sein, nur bei Problemen auf 2,3 (wird duch HM_FBH_DEBUG überschrieben)
+string  sLogPrefix  = "HM_FBH_3:";
 string  sSetTemp;                    ! String Typ.SERIAL:2.SET_TEMPERATURE
 string  sActTemp;                    ! String Typ.SERIAL:2.ACTUAL_TEMPERATURE"
 string  sSwitchState;                ! String Typ.SERIAL.REF des Switches
 string  sSysVarTempLast;             ! String Systemvariable auf welcher sich die letzte Temperatur gemerkt wird
 string  sSysVarTempOffset;           ! String Systemvariable auf welcher sich die letzte Temperatur gemerkt wird
-object  oregler;                     ! Datenobjekt des Reglers für die Solltemperatur (Kanal 2)
-object  olast;                       ! Datenobjekt für WZ_Temp_Last
-object  ostate;                      ! Datenobjekt für XX_Heizung_UG:WZ
 
-integer itimeout  = 1800;            ! 30min Mindestzeit die geheizt wird
-real    roffset   = -0.75;           ! Temperaturoffset bei der die Heizung ausgeschalten wird wg Trägheit der FBH
-real    rlast     =  0.0;
+
+integer itimeout  = 1800;            ! 30min Mindestzeit die geheizt wird (wird durch HM_FBH_TIMEOUT überschrieben)
 real    rakt      = -1.0;            ! aktuelle Temperatur
 real    rsoll     = -1.0;            ! Solltemperatur im Raumthermostat (Regler).
 
 object osrc = dom.GetObject("$src$");
 object olog = dom.GetObject("CUxD.CUX2801001:1.LOGIT");
+
+if ( dom.GetObject('HM_FBH_DEBUG') ) {
+   idebug   = dom.GetObject('HM_FBH_DEBUG').Value();
+}
+if ( dom.GetObject('HM_FBH_TIMEOUT') ) {
+   itimeout = dom.GetObject('HM_FBH_TIMEOUT').Value();
+}
 
 if ( olog ) {
   if ((idebug>3) && osrc) {
@@ -121,9 +132,9 @@ if (osrc) {
    ! olog.State(sLogPrefix#" zugeh ActTemp="#sActTemp#" SetTemp="#sSetTemp#" Switch="#sSwitchState#"  SysVar="#sSysVarTempLast);
 
    if (dom.GetObject('Heizperiode').State()) {
-             ostate       = dom.GetObject( sSwitchState );             ! SwitchObject belegen
+     object  oSwitch      = dom.GetObject( sSwitchState );     ! Datenobjekt für XX_Heizung_UG:WZ
      time    tnow         = system.Date("%Y-%m-%d %H:%M:%S").ToTime(); ! aktuelle Zeit
-     time    ts_timestamp = ostate.Timestamp();
+     time    ts_timestamp = oSwitch.Timestamp();
      time    tsw          = ts_timestamp.ToInteger();
      integer isdiff       = tnow.ToInteger() - tsw.ToInteger();        ! Sekunden seit letztem Statuswechsel
 
@@ -133,17 +144,14 @@ if (osrc) {
         }
      }
      else {
-        oregler   = dom.GetObject( sSetTemp );        ! Solltemperatur auslesen
-        rsoll     = oregler.Value();
-        oregler   = dom.GetObject( sActTemp );        ! aktuelle auslesen
-        rakt      = oregler.Value();
+        rsoll   = dom.GetObject( sSetTemp ).Value();        ! Solltemperatur auslesen
+        rakt    = dom.GetObject( sActTemp ).Value();        ! aktuelle auslesen
 
-        if (rsoll >= 0 && rakt >= 0 ) {                               ! Wenn sSetTemp/sActTemp ausgelesen werden konnten
+        if (rsoll >= 0 && rakt >= 0 ) {               ! Wenn sSetTemp/sActTemp ausgelesen werden konnten
            string  sstate       = "konstant";
-           object  ooffset      = dom.GetObject( sSysVarTempOffset ); ! SystemVar XX_Temp_Offset auslesen
-                   roffset      = ooffset.Value();
-                   olast        = dom.GetObject( sSysVarTempLast );   ! SystemVar XX_Temp_Last auslesen
-                   rlast        = olast.Value();
+           real    roffset      = dom.GetObject( sSysVarTempOffset ).Value(); ! SystemVar XX_Temp_Offset auslesen
+           object  olast        = dom.GetObject( sSysVarTempLast );           ! SystemVar XX_Temp_Last auslesen
+           real    rlast        = olast.Value();
            integer itempdiff    = (( rakt * 10 ).ToInteger() - ( rlast * 10 ).ToInteger()); ! eine Nachkommastelle reicht aus
 
            if ( itempdiff < 0 ) {
@@ -154,17 +162,17 @@ if (osrc) {
            }
 
            if (idebug>0) {
-              olog.State(sLogPrefix#"Soll=" # rsoll # "|Ist=" # rakt # "|Last=" # rlast # "|Status=" # ostate.State() # "|t=" # isdiff # "s|" # sstate);
+              olog.State(sLogPrefix#"Soll=" # rsoll # "|Ist=" # rakt # "|Last=" # rlast # "|Status=" # oSwitch.State() # "|t=" # isdiff # "s|" # sstate);
            }
 
-           if ( ostate.State() ) { ! Heizung ist gerade an
+           if ( oSwitch.State() ) { ! Heizung ist gerade an
               ! Wenn aktuelle Temperatur+Offset über Solltemperatur liegt
               ! und die Temperatur noch steigt dann schalte aus
               if ( (rakt+roffset >= rsoll) && ( itempdiff > 0 ) ) {
                  if (idebug>0) {
                     olog.State(sLogPrefix#"schalte Heizung aus");
                  }
-                 ostate.State(false);
+                 oSwitch.State(false);
               }
               else {
                  if (idebug>0) {
@@ -177,7 +185,7 @@ if (osrc) {
                  if (idebug>0) {
                     olog.State(sLogPrefix#"schalte Heizung an");
                  }
-                 ostate.State(true);
+                 oSwitch.State(true);
               }
               else {
                  if (idebug>0) {

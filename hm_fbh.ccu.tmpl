@@ -1,10 +1,10 @@
-! HM_FBH Version 3 Steuerung Fussbodenheizung
+! HM_FBH Version 4 Steuerung Fussbodenheizung
 !
 ! Bei Versionswechsel auch sLogPrefix anpassen
 !
 ! https://github.com/mgoppold/hm_fbh.git
 ! bzw.
-! https://github.com/mgoppold/hm_fbh/releases/tag/2
+! https://github.com/mgoppold/hm_fbh/releases/tag/3
 !
 ! Script zur Steuerung einer Fussbodenheizung
 ! Temperaturen und Zeiten werden im Thermostat definiert
@@ -49,7 +49,7 @@
 !   dieses Script
 
 integer idebug      = 0;             ! Debug Infos /tmp/devlog.txt - sollte immer auf 0 oder 1 sein, nur bei Problemen auf 2,3 (wird duch HM_FBH_DEBUG überschrieben)
-string  sLogPrefix  = "HM_FBH_3:";
+string  sLogPrefix  = "HM_FBH_4:";
 string  sSetTemp;                    ! String Typ.SERIAL:2.SET_TEMPERATURE
 string  sActTemp;                    ! String Typ.SERIAL:2.ACTUAL_TEMPERATURE"
 string  sSwitchState;                ! String Typ.SERIAL.REF des Switches
@@ -153,6 +153,7 @@ if (osrc) {
            object  olast        = dom.GetObject( sSysVarTempLast );           ! SystemVar XX_Temp_Last auslesen
            real    rlast        = olast.Value();
            integer itempdiff    = (( rakt * 10 ).ToInteger() - ( rlast * 10 ).ToInteger()); ! eine Nachkommastelle reicht aus
+           real    rsolloffset   = rsoll+roffset;
 
            if ( itempdiff < 0 ) {
               sstate = "fallend";
@@ -162,13 +163,12 @@ if (osrc) {
            }
 
            if (idebug>0) {
-              olog.State(sLogPrefix#"Soll=" # rsoll # "|Ist=" # rakt # "|Last=" # rlast # "|Status=" # oSwitch.State() # "|t=" # isdiff # "s|" # sstate);
+              olog.State(sLogPrefix#"Soll=" # rsoll # "|Soll+O="#rsolloffset#"|Ist=" # rakt # "|Last=" # rlast # "|Status=" # oSwitch.State() # "|t=" # isdiff # "s|" # sstate);
            }
 
            if ( oSwitch.State() ) { ! Heizung ist gerade an
               ! Wenn aktuelle Temperatur+Offset über Solltemperatur liegt
-              ! und die Temperatur noch steigt dann schalte aus
-              if ( (rakt+roffset >= rsoll) && ( itempdiff > 0 ) ) {
+              if ( rakt >= rsolloffset ) {
                  if (idebug>0) {
                     olog.State(sLogPrefix#"schalte Heizung aus");
                  }
@@ -176,7 +176,7 @@ if (osrc) {
               }
               else {
                  if (idebug>0) {
-                    olog.State(sLogPrefix#"Heizung bleit an");
+                    olog.State(sLogPrefix#"Heizung bleibt an");
                  }
               }
            }
@@ -190,10 +190,10 @@ if (osrc) {
               else {
                  if (idebug>0) {
                     if ( rakt > rsoll ) {
-                       olog.State(sLogPrefix#"Heizung bleit aus (weil Ist>=Soll)");
+                       olog.State(sLogPrefix#"Heizung bleibt aus (weil Ist>=Soll)");
                     }
                     else {
-                       olog.State(sLogPrefix#"Heizung bleit aus (weil Temp noch steigt)");
+                       olog.State(sLogPrefix#"Heizung bleibt aus (weil Temp noch steigt)");
                     }
                  }
               }

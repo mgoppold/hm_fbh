@@ -1,10 +1,10 @@
-! HM_FBH Version 4 Steuerung Fussbodenheizung
+! HM_FBH Version 5 Steuerung Fussbodenheizung
 !
 ! Bei Versionswechsel auch sLogPrefix anpassen
 !
 ! https://github.com/mgoppold/hm_fbh.git
 ! bzw.
-! https://github.com/mgoppold/hm_fbh/releases/tag/3
+! https://github.com/mgoppold/hm_fbh/releases/tag/4
 !
 ! Script zur Steuerung einer Fussbodenheizung
 ! Temperaturen und Zeiten werden im Thermostat definiert
@@ -29,19 +29,19 @@
 ! Programm: HM_FBH
 !
 ! Bedingung: Wenn...
-! WZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! WZ_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! AZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! AZ_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! BZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! BZ_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! FU_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! FU_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! GZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! GZ_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! KU_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! KU_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! ODER
-! SZ_Thermostat:1 bei im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
+! SZ_Thermostat:1 bei Temperatur im Wertebereich von 5.00° C bis kleiner 30.00° C bei Aktualisierung auslösen
 ! UND
 ! Heizperiode ist wahr
 ! Aktivität: Dann...
@@ -49,7 +49,7 @@
 !   dieses Script
 
 integer idebug      = 0;             ! Debug Infos /tmp/devlog.txt - sollte immer auf 0 oder 1 sein, nur bei Problemen auf 2,3 (wird duch HM_FBH_DEBUG überschrieben)
-string  sLogPrefix  = "HM_FBH_4:";
+string  sLogPrefix  = "HM_FBH_5:";
 string  sSetTemp;                    ! String Typ.SERIAL:2.SET_TEMPERATURE
 string  sActTemp;                    ! String Typ.SERIAL:2.ACTUAL_TEMPERATURE"
 string  sSwitchState;                ! String Typ.SERIAL.REF des Switches
